@@ -24,6 +24,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'sound_player = mobile_robot_control.sound_player_node:main',
             'mobile_robot_control_node = mobile_robot_control.mobile_robot_control_node:main'
         ],
     },
