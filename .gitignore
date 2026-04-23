@@ -1,16 +1,17 @@
-
 # Python
 __pycache__/
 *.pyc
 *.pyo
-.env
 
-# Build artifacts
+# ROS2 build artifacts
 build/
-devel/
 install/
 log/
 
-# Editor
+# Secrets
+.env
+
+# Editors
 .vscode/
+.idea/
 *.swp
