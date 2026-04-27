@@ -9,23 +9,51 @@
     --bg: #0f1115; --panel: #181b22; --border: #2a2f3a; --text: #e6e6e6;
     --muted: #8a8f9a; --accent: #5aa8ff; --user: #2b3a55; --assistant: #1f2530;
     --danger: #d9534f;
+    --voice: #4a3a55; --tool-call: #4a3915; --tool-result: #1f3320;
+    --thought: #2a2a3a; --wake: #15334a; --stats: #20203a;
+    --warn: #c9a227;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif; }
-  #app { display: flex; flex-direction: column; height: 100vh; max-width: 780px; margin: 0 auto; padding: 12px; }
-  header { display: flex; align-items: center; gap: 10px; padding: 6px 4px 12px; border-bottom: 1px solid var(--border); }
-  header h1 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; }
-  .odom { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #app { display: flex; flex-direction: column; height: 100vh; max-width: 880px; margin: 0 auto; padding: 12px; }
+  header { display: flex; align-items: center; gap: 8px; padding: 6px 4px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; min-width: 200px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 8px; font-size: 11px; color: var(--muted);
+  }
+  .pill .dot-live { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; animation: pulse 1.6s infinite; }
+  .pill .dot-paused { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  .pill.cost { font-variant-numeric: tabular-nums; }
   button.icon { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
     padding: 6px 10px; font-size: 12px; cursor: pointer; }
   button.icon:hover { border-color: var(--accent); }
   button.estop { background: var(--danger); border-color: var(--danger); color: white; font-weight: 600; }
-  #log { flex: 1; overflow-y: auto; padding: 12px 4px; display: flex; flex-direction: column; gap: 8px; }
-  .msg { padding: 10px 12px; border-radius: 10px; max-width: 85%; line-height: 1.45; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
-  .msg.user { background: var(--user); align-self: flex-end; }
-  .msg.assistant { background: var(--assistant); align-self: flex-start; border: 1px solid var(--border); }
-  .msg.system { background: transparent; color: var(--muted); font-size: 12px; text-align: center; align-self: center; }
+  button.paused { background: var(--warn); border-color: var(--warn); color: #111; }
+  #log { flex: 1; overflow-y: auto; padding: 12px 4px; display: flex; flex-direction: column; gap: 6px; }
+  .ev {
+    border-radius: 10px; padding: 8px 12px; font-size: 13px; line-height: 1.45;
+    max-width: 88%; white-space: pre-wrap; word-wrap: break-word;
+    border: 1px solid transparent;
+  }
+  .ev .meta { font-size: 10px; color: var(--muted); margin-bottom: 3px; display: flex; gap: 6px; align-items: center; }
+  .ev .icon { font-size: 14px; }
+  .ev.user           { background: var(--user); align-self: flex-end; }
+  .ev.user.voice     { background: var(--voice); }
+  .ev.assistant      { background: var(--assistant); align-self: flex-start; border-color: var(--border); }
+  .ev.tool_call      { background: var(--tool-call); align-self: center; max-width: 92%; font-family: ui-monospace,monospace; font-size: 12px; }
+  .ev.tool_result    { background: var(--tool-result); align-self: center; max-width: 92%; font-family: ui-monospace,monospace; font-size: 11px; opacity: 0.85; }
+  .ev.thought        { background: var(--thought); align-self: flex-start; max-width: 88%; font-style: italic; opacity: 0.85; }
+  .ev.wake           { background: var(--wake); align-self: center; font-size: 12px; }
+  .ev.stats          { background: var(--stats); align-self: center; font-size: 11px; opacity: 0.7; font-family: ui-monospace,monospace; }
+  .ev.recording, .ev.transcribing, .ev.speaking, .ev.speaking_done {
+    background: transparent; align-self: center; font-size: 12px; color: var(--muted); padding: 4px 8px;
+  }
+  .ev.system         { background: transparent; color: var(--muted); font-size: 12px; text-align: center; align-self: center; }
+  .ev.error          { background: var(--danger); align-self: center; color: white; }
+
   #composer { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
   #input { flex: 1; resize: none; min-height: 44px; max-height: 140px; background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit; }
@@ -33,82 +61,232 @@
   #send { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 0 18px;
     font-size: 14px; font-weight: 600; cursor: pointer; }
   #send:disabled { opacity: 0.5; cursor: wait; }
-  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 6px;
-    animation: pulse 1.2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>LLM Robot Control</h1>
-    <span id="odom" class="odom">x=0.000  y=0.000  theta=0</span>
-    <button class="icon" id="reset-btn">reset</button>
-    <button class="icon estop" id="estop-btn">STOP</button>
+    <h1>🤖 LLM Robot Control</h1>
+    <span class="pill" id="status-pill"><span class="dot-live"></span><span id="conn-status">live</span></span>
+    <span class="pill cost" id="cost-pill" title="累计 API 成本（gpt-4o-mini 价格）">$0.0000</span>
+    <span id="odom" class="pill">x=0  y=0  θ=0°</span>
+    <button class="icon" id="listen-btn" title="暂停/恢复语音监听">🎙 监听中</button>
+    <button class="icon" id="export-btn" title="导出所有对话与事件">⬇ 导出</button>
+    <button class="icon" id="reset-btn" title="清空对话历史">🗑 重置</button>
+    <button class="icon estop" id="estop-btn" title="紧急停止">⏹ STOP</button>
   </header>
+
   <div id="log"></div>
+
   <div id="composer">
-    <textarea id="input" placeholder="instruct the robot... (Enter to send, Shift+Enter newline)" autofocus></textarea>
-    <button id="send">send</button>
+    <textarea id="input" placeholder="文字下指令... 或对着 ReSpeaker 说 'Hey Jarvis'  (Enter 发送)" autofocus></textarea>
+    <button id="send">发送</button>
   </div>
 </div>
+
 <script>
 const log = document.getElementById('log');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
 const estopBtn = document.getElementById('estop-btn');
 const resetBtn = document.getElementById('reset-btn');
+const exportBtn = document.getElementById('export-btn');
+const listenBtn = document.getElementById('listen-btn');
 const odomEl = document.getElementById('odom');
+const connStatus = document.getElementById('conn-status');
+const statusPill = document.getElementById('status-pill');
+const costPill = document.getElementById('cost-pill');
 
-function addMsg(role, text) {
+const KIND_META = {
+  wake:           { icon: '🎤', label: '唤醒' },
+  recording:      { icon: '⏺',  label: '录音中' },
+  transcribing:   { icon: '✏️', label: '识别中' },
+  user:           { icon: '🗣',  label: '你说' },
+  thought:        { icon: '💭', label: '思考' },
+  tool_call:      { icon: '🔧', label: '调用动作' },
+  tool_result:    { icon: '📊', label: '动作结果' },
+  assistant:      { icon: '🤖', label: '机器人' },
+  speaking:       { icon: '🔈', label: '播音中' },
+  speaking_done:  { icon: '✅', label: '说完了' },
+  stats:          { icon: '⏱', label: '统计' },
+  system:         { icon: 'ℹ️', label: '系统' },
+  error:          { icon: '❌', label: '错误' },
+};
+
+let lastEventId = -1;
+let listeningEnabled = true;
+let allEvents = [];
+
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toTimeString().slice(0, 8);
+}
+
+function renderEvent(ev) {
+  const meta = KIND_META[ev.kind] || { icon: '•', label: ev.kind };
   const div = document.createElement('div');
-  div.className = 'msg ' + role;
-  div.textContent = text;
+  div.className = 'ev ' + ev.kind + (ev.source === 'voice' && ev.kind === 'user' ? ' voice' : '');
+  div.dataset.id = ev.id;
+
+  const metaLine = document.createElement('div');
+  metaLine.className = 'meta';
+  metaLine.innerHTML =
+    `<span class="icon">${meta.icon}</span>` +
+    `<span>${meta.label}</span>` +
+    (ev.source === 'voice' ? `<span>· 语音</span>` : '') +
+    `<span style="margin-left:auto">${fmtTime(ev.ts)}</span>`;
+  div.appendChild(metaLine);
+
+  if (ev.text) {
+    const body = document.createElement('div');
+    body.className = 'body';
+    body.textContent = ev.text;
+    div.appendChild(body);
+  }
+
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
-  return div;
+  allEvents.push(ev);
 }
+
 function setOdom(o) {
   if (!o) return;
-  odomEl.textContent = `x=${o.x.toFixed(3)}  y=${o.y.toFixed(3)}  theta=${o.theta_deg.toFixed(1)}`;
+  odomEl.textContent = `x=${o.x.toFixed(3)}  y=${o.y.toFixed(3)}  θ=${o.theta_deg.toFixed(1)}°`;
 }
+
+function setListeningUI(enabled) {
+  listeningEnabled = enabled;
+  if (enabled) {
+    listenBtn.textContent = '🎙 监听中';
+    listenBtn.classList.remove('paused');
+  } else {
+    listenBtn.textContent = '🚫 已暂停';
+    listenBtn.classList.add('paused');
+  }
+}
+
+async function pollEvents() {
+  try {
+    const r = await fetch(`/events?since_id=${lastEventId}`);
+    const data = await r.json();
+    if (data.events && data.events.length) {
+      data.events.forEach(renderEvent);
+      lastEventId = data.next_since_id;
+    }
+    if (typeof data.cost_usd === 'number') {
+      costPill.textContent = '$' + data.cost_usd.toFixed(4) + '  ·  '
+                             + (data.tokens_in||0) + '↑/' + (data.tokens_out||0) + '↓';
+    }
+    if (typeof data.listening_enabled === 'boolean') {
+      setListeningUI(data.listening_enabled);
+    }
+    connStatus.textContent = 'live';
+  } catch (e) {
+    connStatus.textContent = '断线...';
+  }
+}
+
 async function send() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
-  addMsg('user', text);
   sendBtn.disabled = true;
-  const pending = addMsg('assistant', '');
-  pending.innerHTML = '<span class="dot"></span>thinking...';
   try {
     const r = await fetch('/chat', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message: text})
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text, source: 'text'})
     });
     const data = await r.json();
-    pending.textContent = data.reply || '(no reply)';
     setOdom(data.odom);
-  } catch (e) {
-    pending.textContent = 'request failed: ' + e.message;
-  } finally {
-    sendBtn.disabled = false;
-    input.focus();
-  }
+  } catch (e) { console.error(e); }
+  finally { sendBtn.disabled = false; input.focus(); }
 }
+
 sendBtn.onclick = send;
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
-estopBtn.onclick = async () => {
-  await fetch('/estop', {method: 'POST'});
-  addMsg('system', 'emergency stop sent');
-};
+
+estopBtn.onclick = async () => { await fetch('/estop', {method: 'POST'}); };
+
 resetBtn.onclick = async () => {
+  if (!confirm('清空对话历史和事件日志？')) return;
   await fetch('/reset', {method: 'POST'});
   log.innerHTML = '';
-  addMsg('system', 'conversation reset');
+  allEvents = [];
+  lastEventId = -1;
 };
-addMsg('system', 'Ready. Try: "forward 2 seconds" / "turn left 90 degrees" / "spin in place then stop"');
+
+listenBtn.onclick = async () => {
+  const newState = !listeningEnabled;
+  await fetch('/listening', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled: newState})
+  });
+  setListeningUI(newState);
+};
+
+function downloadFile(filename, content, mime = 'application/json') {
+  const blob = new Blob([content], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
+function eventsToMarkdown(payload) {
+  const lines = [];
+  const exportedAt = new Date(payload.exported_at * 1000).toLocaleString('zh-CN');
+  lines.push(`# Robot Conversation Log`);
+  lines.push(``);
+  lines.push(`Exported: ${exportedAt}`);
+  if (payload.stats) {
+    lines.push(`Stats: $${(payload.stats.cost_usd||0).toFixed(4)} · ${payload.stats.tokens_in||0} input tokens · ${payload.stats.tokens_out||0} output tokens`);
+  }
+  lines.push(``);
+  lines.push(`---`);
+  lines.push(``);
+  const meta = KIND_META;
+  for (const ev of (payload.events || [])) {
+    const m = meta[ev.kind] || { icon: '•', label: ev.kind };
+    const ts = fmtTime(ev.ts);
+    const src = ev.source ? ` (${ev.source})` : '';
+    lines.push(`**[${ts}] ${m.icon} ${m.label}${src}**`);
+    if (ev.text) lines.push(`${ev.text.split('\n').map(l => '> ' + l).join('\n')}`);
+    if (ev.kind === 'tool_call' && ev.args) {
+      lines.push(`> args: \`${JSON.stringify(ev.args)}\``);
+    }
+    lines.push(``);
+  }
+  return lines.join('\n');
+}
+
+exportBtn.onclick = async () => {
+  try {
+    const r = await fetch('/export');
+    const data = await r.json();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    downloadFile(`robot-log-${stamp}.json`, JSON.stringify(data, null, 2));
+    downloadFile(`robot-log-${stamp}.md`, eventsToMarkdown(data), 'text/markdown');
+  } catch (e) {
+    alert('导出失败: ' + e.message);
+  }
+};
+
+pollEvents();
+setInterval(pollEvents, 800);
+
+const welcome = document.createElement('div');
+welcome.className = 'ev system';
+welcome.innerHTML = '<div class="meta"><span class="icon">ℹ️</span><span>就绪</span></div>' +
+                    '<div class="body">在下面打字，或对着麦克风说 "Hey Jarvis"。\n点 ⬇ 导出所有记录；点 🎙 暂停语音监听。</div>';
+log.appendChild(welcome);
 </script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 import math
+import time
 import subprocess
 import rclpy
 import tf2_ros
@@ -57,23 +58,12 @@ class odrive_command(Node):
             self.get_logger().error("Failed to set baud rate")
             raise RuntimeError("Failed to set baud rate")
 
+        # Try once. If any motor is missing, a background timer (set up later
+        # in __init__) will keep retrying every few seconds — works around USB
+        # power banks with idle-shutoff: user can press the bank button at any
+        # time and the node will pick the motors up without a restart.
         self.active_motors = []
-        for dxl_id in [DXL_ID_LEFT, DXL_ID_RIGHT]:
-            _, result, _ = self.packetHandler.ping(self.portHandler, dxl_id)
-            if result != COMM_SUCCESS:
-                self.get_logger().warn(f"Motor ID {dxl_id} not found, skipping")
-                continue
-            self.packetHandler.write1ByteTxRx(
-                self.portHandler, dxl_id, ADDR_TORQUE_ENABLE, TORQUE_DISABLE)
-            self.packetHandler.write1ByteTxRx(
-                self.portHandler, dxl_id, ADDR_OPERATING_MODE, VELOCITY_MODE)
-            self.packetHandler.write1ByteTxRx(
-                self.portHandler, dxl_id, ADDR_TORQUE_ENABLE, TORQUE_ENABLE)
-            self.active_motors.append(dxl_id)
-            self.get_logger().info(f"Motor ID {dxl_id} initialized OK")
-
-        if not self.active_motors:
-            self.get_logger().error("No motors found! Check wiring and baud rate.")
+        self._try_initialize_motors(initial=True)
 
         self.get_logger().info("U2D2/XL330 initialization done")
 
@@ -109,6 +99,10 @@ class odrive_command(Node):
 
         self.twist_sub = self.create_subscription(Twist, "/cmd_vel", self.diff_drive_callback, 10)
         self.get_logger().info("ros initialization done")
+        # Background reconnect timer (every 3 seconds) — only acts if not all
+        # motors are currently active. Cheap when motors are healthy.
+        self._reconnect_timer = self.create_timer(3.0, self._motor_reconnect_tick)
+
 
     # ------------------------------------------------------------------
     # helpers
@@ -234,6 +228,48 @@ class odrive_command(Node):
 
         self.odom_publisher.publish(self.odom_msg)
         self.tf_publisher.sendTransform(self.tf_msg)
+
+    def _try_initialize_motors(self, initial=False):
+        """Ping motors and configure any that respond. Idempotent."""
+        already_active = set(self.active_motors)
+        new_active = []
+        for dxl_id in [DXL_ID_LEFT, DXL_ID_RIGHT]:
+            _, result, _ = self.packetHandler.ping(self.portHandler, dxl_id)
+            if result == COMM_SUCCESS:
+                new_active.append(dxl_id)
+
+        # configure newly found motors only
+        for dxl_id in new_active:
+            if dxl_id in already_active:
+                continue
+            self.packetHandler.write1ByteTxRx(
+                self.portHandler, dxl_id, ADDR_TORQUE_ENABLE, TORQUE_DISABLE)
+            self.packetHandler.write1ByteTxRx(
+                self.portHandler, dxl_id, ADDR_OPERATING_MODE, VELOCITY_MODE)
+            self.packetHandler.write1ByteTxRx(
+                self.portHandler, dxl_id, ADDR_TORQUE_ENABLE, TORQUE_ENABLE)
+            self.get_logger().info(f"Motor ID {dxl_id} initialized OK")
+
+        # mark previously-active motors that disappeared
+        for dxl_id in already_active:
+            if dxl_id not in new_active:
+                self.get_logger().warn(f"Motor ID {dxl_id} disappeared; will retry")
+
+        self.active_motors = new_active
+
+        if initial and not new_active:
+            self.get_logger().warn(
+                "No motors found at startup; will keep retrying every 3s. "
+                "If using a USB power bank, press its button to wake it.")
+
+    def _motor_reconnect_tick(self):
+        """Periodic background check; reinit any motor that isn't currently active."""
+        if len(self.active_motors) >= 2:
+            return  # all good
+        try:
+            self._try_initialize_motors(initial=False)
+        except Exception as e:
+            self.get_logger().warn(f"reconnect tick error: {e}")
 
     def shutdown(self):
         for dxl_id in self.active_motors:
