@@ -6,7 +6,7 @@ package_name = 'llm_robot_control'
 
 setup(
     name=package_name,
-    version='0.0.1',
+    version='0.0.2',
     packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -19,12 +19,13 @@ setup(
     zip_safe=True,
     maintainer='qingxuan',
     maintainer_email='qy264@cornell.edu',
-    description='Natural-language robot control via OpenAI tool use + web UI.',
+    description='Natural-language robot control via OpenAI tool use + web UI + voice (Whisper + Piper).',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'llm_controller_node = llm_robot_control.llm_controller_node:main'
+            'llm_controller_node = llm_robot_control.llm_controller_node:main',
+            'voice_controller_node = llm_robot_control.voice_controller_node:main',
         ],
     },
 )

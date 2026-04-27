@@ -9,6 +9,7 @@ LLM Robot Control Node
 import json
 import math
 import os
+import collections
 import threading
 import time
 from pathlib import Path
@@ -31,6 +32,11 @@ MIN_DURATION = 0.05
 MODEL = "gpt-4o-mini"
 WEB_PORT = 5000
 MAX_HISTORY_MESSAGES = 20
+EVENT_LOG_MAX = 200    # max events kept in ring buffer for the UI
+
+# Pricing for gpt-4o-mini (USD per token, as of 2026)
+PRICE_PER_INPUT_TOKEN  = 0.15  / 1_000_000
+PRICE_PER_OUTPUT_TOKEN = 0.60  / 1_000_000
 
 SYSTEM_PROMPT = """You are controlling a small two-wheeled differential-drive desktop robot.
 
@@ -130,8 +136,34 @@ class LLMControllerNode(Node):
         self._chat_lock = threading.Lock()
         self._cmd_lock = threading.Lock()
 
+        # Live event log for the UI (wake / user / tool_call / tool_result / assistant / system)
+        self.events = collections.deque(maxlen=EVENT_LOG_MAX)
+        self._event_lock = threading.Lock()
+        self._next_event_id = 0
+
+        # Voice listening can be paused from the UI
+        self._listening_enabled = True
+
+        # Cost / token accounting
+        self._tokens_in = 0
+        self._tokens_out = 0
+        self._cost_usd = 0.0
+
         self._start_web_server()
         self.get_logger().info(f"LLM controller ready. Open http://<pi-ip>:{WEB_PORT}")
+
+    def _log_event(self, kind, text, **extra):
+        """Append an event to the live event log for the UI."""
+        with self._event_lock:
+            ev = {
+                "id": self._next_event_id,
+                "ts": time.time(),
+                "kind": kind,
+                "text": str(text),
+            }
+            ev.update(extra)
+            self._next_event_id += 1
+            self.events.append(ev)
 
     def _odom_cb(self, msg: Odometry):
         qz = msg.pose.pose.orientation.z
@@ -183,21 +215,45 @@ class LLMControllerNode(Node):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def handle_user_message(self, user_text):
+    def handle_user_message(self, user_text, source="text"):
         with self._chat_lock:
+            turn_start = time.time()
             self.history.append({"role": "user", "content": user_text})
+            self._log_event("user", user_text, source=source)
             if len(self.history) > MAX_HISTORY_MESSAGES + 1:
                 self.history = [self.history[0]] + self.history[-MAX_HISTORY_MESSAGES:]
 
-            for _ in range(6):
+            for round_idx in range(6):
                 resp = self.openai.chat.completions.create(
                     model=MODEL, messages=self.history, tools=TOOLS,
                 )
+                # accumulate token usage
+                try:
+                    usage = resp.usage
+                    self._tokens_in += usage.prompt_tokens
+                    self._tokens_out += usage.completion_tokens
+                    self._cost_usd += (usage.prompt_tokens * PRICE_PER_INPUT_TOKEN
+                                       + usage.completion_tokens * PRICE_PER_OUTPUT_TOKEN)
+                except Exception:
+                    pass
                 msg = resp.choices[0].message
                 self.history.append(msg.model_dump(exclude_none=True))
 
                 if not msg.tool_calls:
-                    return msg.content or "(no reply)"
+                    reply = msg.content or "(no reply)"
+                    self._log_event("assistant", reply)
+                    self._log_event("stats",
+                        f"耗时 {time.time()-turn_start:.1f}s  ·  累计 ${self._cost_usd:.4f}  ·  tokens {self._tokens_in}↑/{self._tokens_out}↓",
+                        duration=round(time.time()-turn_start, 2),
+                        cost_usd=round(self._cost_usd, 6),
+                        tokens_in=self._tokens_in,
+                        tokens_out=self._tokens_out)
+                    return reply
+
+                # If the model also produced a "thinking out loud" content alongside tool calls,
+                # surface it so the user sees the reasoning step.
+                if msg.content:
+                    self._log_event("thought", msg.content)
 
                 for tc in msg.tool_calls:
                     name = tc.function.name
@@ -206,12 +262,15 @@ class LLMControllerNode(Node):
                     except json.JSONDecodeError:
                         args = {}
                     self.get_logger().info(f"tool call: {name}({args})")
+                    self._log_event("tool_call", f"{name}({args})", tool=name, args=args)
                     result = self._exec_tool(name, args)
+                    self._log_event("tool_result", json.dumps(result, ensure_ascii=False), result=result)
                     self.history.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": json.dumps(result),
                     })
+            self._log_event("system", "(max tool rounds reached)")
             return "(max tool rounds reached)"
 
     def _start_web_server(self):
@@ -243,12 +302,13 @@ class LLMControllerNode(Node):
 
         @app.route("/chat", methods=["POST"])
         def chat():
-            data = request.get_json(force=True)
-            user = (data or {}).get("message", "").strip()
+            data = request.get_json(force=True) or {}
+            user = data.get("message", "").strip()
+            source = data.get("source", "text")
             if not user:
                 return jsonify({"reply": "(empty)"}), 400
             try:
-                reply = self.handle_user_message(user)
+                reply = self.handle_user_message(user, source=source)
             except Exception as e:
                 self.get_logger().error(f"chat error: {e}")
                 return jsonify({"reply": f"error: {e}"}), 500
@@ -263,7 +323,64 @@ class LLMControllerNode(Node):
         def reset():
             with self._chat_lock:
                 self.history = [{"role": "system", "content": SYSTEM_PROMPT}]
+            with self._event_lock:
+                self.events.clear()
+                self._next_event_id = 0
+            self._log_event("system", "对话已重置")
             return jsonify({"ok": True})
+
+        @app.route("/event", methods=["POST"])
+        def event_post():
+            data = request.get_json(force=True) or {}
+            kind = data.get("kind", "system")
+            text = data.get("text", "")
+            extra = {k: v for k, v in data.items() if k not in ("kind", "text")}
+            self._log_event(kind, text, **extra)
+            return jsonify({"ok": True})
+
+        @app.route("/events", methods=["GET"])
+        def events_get():
+            try:
+                since_id = int(request.args.get("since_id", -1))
+            except ValueError:
+                since_id = -1
+            with self._event_lock:
+                evs = [e for e in self.events if e["id"] > since_id]
+            return jsonify({
+                "events": evs,
+                "next_since_id": evs[-1]["id"] if evs else since_id,
+                "listening_enabled": self._listening_enabled,
+                "cost_usd": round(self._cost_usd, 6),
+                "tokens_in": self._tokens_in,
+                "tokens_out": self._tokens_out,
+            })
+
+        @app.route("/listening", methods=["GET", "POST"])
+        def listening():
+            if request.method == "POST":
+                data = request.get_json(force=True) or {}
+                self._listening_enabled = bool(data.get("enabled", True))
+                self._log_event("system",
+                    f"语音监听: {'开启' if self._listening_enabled else '已暂停'}")
+            return jsonify({"enabled": self._listening_enabled})
+
+        @app.route("/export", methods=["GET"])
+        def export_get():
+            """Return everything for download: events + chat history + stats."""
+            with self._event_lock:
+                evs = list(self.events)
+            with self._chat_lock:
+                hist = list(self.history)
+            return jsonify({
+                "exported_at": time.time(),
+                "events": evs,
+                "chat_history": hist,
+                "stats": {
+                    "cost_usd": round(self._cost_usd, 6),
+                    "tokens_in": self._tokens_in,
+                    "tokens_out": self._tokens_out,
+                },
+            })
 
         def _run():
             app.run(host="0.0.0.0", port=WEB_PORT, debug=False, use_reloader=False)
