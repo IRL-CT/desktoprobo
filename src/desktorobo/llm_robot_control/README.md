@@ -18,10 +18,10 @@
 
 | | |
 |---|---|
-| 🎤 **Wake-word voice** | Say *"Hey Jarvis"* + a command (中文 / English). Local detection, no cloud. |
+| 🎤 **Wake-word voice** | Say *"Hey Jarvis"* + a command in English. Local detection, no cloud. |
 | 💬 **Web chat UI** | Open `http://<pi-ip>:5000` from any device on the LAN. |
 | 🧠 **LLM tool use** | GPT-4o-mini calls `drive` / `stop` / `wait` / `get_status`. |
-| 🔈 **Robot speaks back** | Local Piper Chinese TTS through the ReSpeaker output. |
+| 🔈 **Robot speaks back** | Local Piper English TTS through the ReSpeaker output. |
 | 📊 **Live event timeline** | Wake → record → transcribe → reason → tool → reply → speak — all visible. |
 | 💰 **Cost dashboard** | Real-time token + USD counter (~$0.0007 / interaction). |
 | ⏸ **Pause / resume voice** | Toggle in UI; voice node respects it within 3 s. |
@@ -63,7 +63,7 @@ flowchart TB
     end
 
     subgraph OUT["📤 Outputs"]
-        PIPER["Piper TTS<br/>local zh_CN-huayan-medium"]
+        PIPER["Piper TTS<br/>local en_US-amy-low"]
         SPEAKER["ReSpeaker speaker<br/>(3.5mm out via aplay)"]
         UI["Web UI<br/>polls /events @ 800ms"]
     end
@@ -108,7 +108,7 @@ flowchart TB
 
 ---
 
-## 🎬 What Happens When You Say "Hey Jarvis, 前进 1 秒"
+## 🎬 What Happens When You Say "Hey Jarvis, go forward 1 second"
 
 ```mermaid
 sequenceDiagram
@@ -130,11 +130,11 @@ sequenceDiagram
     V->>Spk: 880 Hz ding
     V->>UI: 🎤 wake
 
-    U->>Mic: "前进 1 秒"
+    U->>Mic: "go forward 1 second"
     Mic->>V: audio (record until 1.5s silence)
     V->>UI: ⏺ recording / ✏️ transcribing
     V->>W: wav + anti-hallucination prompt
-    W-->>V: "前进一秒。"
+    W-->>V: "go forward one second."
     V->>L: POST /chat {message, source:"voice"}
     L->>UI: 🗣 user (voice)
 
@@ -147,15 +147,15 @@ sequenceDiagram
     L->>UI: 📊 tool_result {ok:true}
 
     L->>G: tool result
-    G-->>L: "前进了一秒。请问接下来要做什么？"
-    L->>UI: 🤖 assistant + ⏱ stats (耗时/成本/tokens)
+    G-->>L: "ok"
+    L->>UI: 🤖 assistant + ⏱ stats (latency/cost/tokens)
     L-->>V: reply text
 
     V->>UI: 🔈 speaking
-    V->>TTS: synthesize zh_CN
+    V->>TTS: synthesize en_US
     TTS-->>V: wav
     V->>Spk: aplay -D plughw:1,0
-    Spk->>U: 🔊 "前进了一秒。请问接下来要做什么？"
+    Spk->>U: 🔊 "ok"  (or short ack beep — TTS suppressed for simple actions)
     V->>UI: ✅ speaking_done
 ```
 
@@ -182,7 +182,7 @@ source install/setup.bash
 ros2 launch llm_robot_control llm_voice_launch.py
 ```
 
-Open `http://<pi-ip>:5000` in a browser. Say *"Hey Jarvis"* and try **"前进 1 秒"**, **"转一圈"**, **"画一个正方形"**.
+Open `http://<pi-ip>:5000` in a browser. Say *"Hey Jarvis"* and try **"go forward 1 second"**, **"spin in a circle"**, **"drive a square"**.
 
 ---
 
@@ -204,10 +204,11 @@ Open `http://<pi-ip>:5000` in a browser. Say *"Hey Jarvis"* and try **"前进 1 
 | Layer | Stack |
 |---|---|
 | **Wake word** | [openWakeWord](https://github.com/dscripka/openWakeWord) `hey_jarvis_v0.1` (ONNX, local) |
-| **STT** | OpenAI **Whisper API** (`whisper-1`, language auto-detect) |
+| **STT** | OpenAI **Whisper API** (`whisper-1`, `language="en"`) |
 | **LLM** | OpenAI **gpt-4o-mini** with function calling, ≤6 tool rounds per turn |
-| **TTS** | [Piper](https://github.com/rhasspy/piper) `zh_CN-huayan-medium` (ONNX, local) |
-| **Audio I/O** | `sounddevice` (capture) + `aplay -D plughw:1,0` (playback) |
+| **TTS** | [Piper](https://github.com/rhasspy/piper) `en_US-amy-low` (ONNX, local, persistent) |
+| **Audio I/O** | `sounddevice` (capture) + `aplay -D plughw:CARD=ArrayUAC10,DEV=0` (playback) |
+| **VAD** | `webrtcvad` (mode 2) — ~700 ms end-of-speech detection |
 | **Robot driver** | `dynamixel-sdk` Protocol 2.0 |
 | **ROS** | ROS 2 Jazzy, `rclpy` (Python) |
 | **Web** | Flask + vanilla JS, polls `/events` every 800 ms |
@@ -251,14 +252,14 @@ The Flask server (`llm_controller_node`) exposes everything the UI and voice nod
 ## 📺 Web UI
 
 **Header pills (left → right):**
-- 🟢 **live** — connection status (turns to "断线…" if /events fetch fails)
+- 🟢 **live** — connection status (turns to "offline…" if /events fetch fails)
 - 💰 **$0.0007 · 12,345↑/678↓** — cumulative cost & tokens
 - 📍 **x / y / θ** — live odometry
 
 **Header buttons:**
-- 🎙 **监听中 / 已暂停** — toggle voice listening (voice node polls every 3 s)
-- ⬇ **导出** — downloads `robot-log-<timestamp>.json` and `.md`
-- 🗑 **重置** — clear conversation
+- 🎙 **Listening / Paused** — toggle voice listening (voice node polls every 3 s)
+- ⬇ **Export** — downloads `robot-log-<timestamp>.json` and `.md`
+- 🗑 **Reset** — clear conversation
 - ⏹ **STOP** — emergency stop
 
 **Event timeline (auto-scrolling):**
@@ -273,7 +274,7 @@ The Flask server (`llm_controller_node`) exposes everything the UI and voice nod
 | Amber · centered · mono | `tool_call` | `drive({linear:0.15, ...})` |
 | Green · centered · mono | `tool_result` | `{ok:true, ...}` |
 | Dark · left | `assistant` | Final LLM reply |
-| Dim · centered · mono | `stats` | `耗时 1.4s · 累计 $0.0008 · tokens 412↑/45↓` |
+| Dim · centered · mono | `stats` | `Latency 1.4s · Total $0.0008 · tokens 412↑/45↓` |
 | Red · centered | `error` | Anything that went wrong |
 
 ---
@@ -300,9 +301,9 @@ For long-running studies, prefer a wall adapter or a "always-on" power bank (Vol
 <details>
 <summary><b>Whisper anti-hallucination details</b></summary>
 
-When the audio is silent or noise-only, Whisper has a tendency to fall back to its highest-frequency Chinese training-set N-grams — most infamously the YouTube outro spam *"请不吝点赞 订阅 转发 打赏…"*. This package handles it two ways:
+When the audio is silent or noise-only, Whisper has a tendency to fall back to its highest-frequency training-set N-grams — most infamously YouTube outro spam ("Thanks for watching, please subscribe…"). This package handles it two ways:
 
-1. **Prompt biasing.** Whisper is given a prompt seeded with the robot's verb vocabulary (前进/后退/停止/左转/右转/…) so it strongly prefers those tokens at low confidence.
+1. **Prompt biasing.** Whisper is given a prompt seeded with the robot's verb vocabulary (forward / backward / stop / turn left / turn right / spin / faster / slower) and `language="en"` is forced, so it strongly prefers those tokens at low confidence.
 2. **Substring blacklist.** Transcripts containing known spam fragments are dropped before reaching the LLM. List in `voice_controller_node.py::_WHISPER_HALLUCINATIONS`.
 
 </details>
@@ -330,8 +331,8 @@ After replug, `cat /sys/bus/usb-serial/devices/ttyUSB0/latency_timer` should pri
 ```bash
 mkdir -p ~/voice_models/piper
 cd ~/voice_models/piper
-wget https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx
-wget https://huggingface.co/rhasspy/piper-voices/resolve/main/zh/zh_CN/huayan/medium/zh_CN-huayan-medium.onnx.json
+wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/low/en_US-amy-low.onnx
+wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/low/en_US-amy-low.onnx.json
 ```
 
 openWakeWord ships its pre-trained models inside the pip package — no separate download needed.
@@ -368,7 +369,7 @@ ros2 launch llm_robot_control llm_voice_launch.py
 WW_MODEL_PATH = ".../openwakeword/resources/models/alexa_v0.1.onnx"
 ```
 
-For a custom Chinese wake word like *"小机器人"*, train your own with [openWakeWord training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb).
+For a custom wake word, train your own with [openWakeWord training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb).
 
 </details>
 
@@ -444,7 +445,7 @@ This is the YouTube spam hallucination — see [Whisper anti-hallucination detai
 <details>
 <summary><b>Robot speaks gibberish</b></summary>
 
-Piper has a Chinese voice and can't pronounce English well — if the LLM replied in English (e.g. an error message), the synthesizer will read English letters with Chinese phonemes and it sounds nonsensical. Make sure your `SYSTEM_PROMPT` enforces Chinese replies, or extend `_speak()` to detect language and switch voices.
+Piper is loaded with the English `en_US-amy-low` voice. If the LLM ever replies with non-English content, the synthesizer will fall back to phonemic guessing and may sound off. The current `SYSTEM_PROMPT` instructs the model to reply in English only.
 
 </details>
 
@@ -461,7 +462,7 @@ Most common: a stale `mobile_robot_control_node` from a previous launch is still
 
 - [ ] **Audio archiving** — save every user wav under `~/desktoprobo/voice_archive/<timestamp>.wav` for HRI study analysis.
 - [ ] **Trajectory visualization** — Canvas overlay drawing the path from `/odom`.
-- [ ] **Custom Chinese wake word** — train *"小机"* with openWakeWord.
+- [ ] **Custom wake word** — e.g. train a name like "Hey Robo" with openWakeWord.
 - [ ] **Pre-recorded WAV optimization** — for `forward / turn / stop / hello`, play from `sounds/*.wav` instead of TTS for zero latency.
 - [ ] **Voice barge-in** — let the user interrupt the robot mid-speech.
 - [ ] **Multi-user session separation** — different `session_id` per study participant.
