@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
@@ -15,7 +15,7 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "SF Pro Text", sans-serif; }
   #app { display: flex; flex-direction: column; height: 100vh; max-width: 880px; margin: 0 auto; padding: 12px; }
   header { display: flex; align-items: center; gap: 8px; padding: 6px 4px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; min-width: 200px; }
@@ -69,19 +69,19 @@
   <header>
     <h1>🤖 LLM Robot Control</h1>
     <span class="pill" id="status-pill"><span class="dot-live"></span><span id="conn-status">live</span></span>
-    <span class="pill cost" id="cost-pill" title="累计 API 成本（gpt-4o-mini 价格）">$0.0000</span>
+    <span class="pill cost" id="cost-pill" title="Cumulative API cost (gpt-4o-mini pricing)">$0.0000</span>
     <span id="odom" class="pill">x=0  y=0  θ=0°</span>
-    <button class="icon" id="listen-btn" title="暂停/恢复语音监听">🎙 监听中</button>
-    <button class="icon" id="export-btn" title="导出所有对话与事件">⬇ 导出</button>
-    <button class="icon" id="reset-btn" title="清空对话历史">🗑 重置</button>
-    <button class="icon estop" id="estop-btn" title="紧急停止">⏹ STOP</button>
+    <button class="icon" id="listen-btn" title="Pause / resume voice listening">🎙 Listening</button>
+    <button class="icon" id="export-btn" title="Export full session">⬇ Export</button>
+    <button class="icon" id="reset-btn" title="Clear conversation history">🗑 Reset</button>
+    <button class="icon estop" id="estop-btn" title="Emergency stop">⏹ STOP</button>
   </header>
 
   <div id="log"></div>
 
   <div id="composer">
-    <textarea id="input" placeholder="文字下指令... 或对着 ReSpeaker 说 'Hey Jarvis'  (Enter 发送)" autofocus></textarea>
-    <button id="send">发送</button>
+    <textarea id="input" placeholder="Type a command... or say 'Hey Jarvis' to the ReSpeaker  (Enter to send)" autofocus></textarea>
+    <button id="send">Send</button>
   </div>
 </div>
 
@@ -99,19 +99,19 @@ const statusPill = document.getElementById('status-pill');
 const costPill = document.getElementById('cost-pill');
 
 const KIND_META = {
-  wake:           { icon: '🎤', label: '唤醒' },
-  recording:      { icon: '⏺',  label: '录音中' },
-  transcribing:   { icon: '✏️', label: '识别中' },
-  user:           { icon: '🗣',  label: '你说' },
-  thought:        { icon: '💭', label: '思考' },
-  tool_call:      { icon: '🔧', label: '调用动作' },
-  tool_result:    { icon: '📊', label: '动作结果' },
-  assistant:      { icon: '🤖', label: '机器人' },
-  speaking:       { icon: '🔈', label: '播音中' },
-  speaking_done:  { icon: '✅', label: '说完了' },
-  stats:          { icon: '⏱', label: '统计' },
-  system:         { icon: 'ℹ️', label: '系统' },
-  error:          { icon: '❌', label: '错误' },
+  wake:           { icon: '🎤', label: 'Wake' },
+  recording:      { icon: '⏺',  label: 'Recording' },
+  transcribing:   { icon: '✏️', label: 'Transcribing' },
+  user:           { icon: '🗣',  label: 'You' },
+  thought:        { icon: '💭', label: 'Thinking' },
+  tool_call:      { icon: '🔧', label: 'Tool call' },
+  tool_result:    { icon: '📊', label: 'Tool result' },
+  assistant:      { icon: '🤖', label: 'Robot' },
+  speaking:       { icon: '🔈', label: 'Speaking' },
+  speaking_done:  { icon: '✅', label: 'Spoke' },
+  stats:          { icon: '⏱', label: 'Stats' },
+  system:         { icon: 'ℹ️', label: 'System' },
+  error:          { icon: '❌', label: 'Error' },
 };
 
 let lastEventId = -1;
@@ -134,7 +134,7 @@ function renderEvent(ev) {
   metaLine.innerHTML =
     `<span class="icon">${meta.icon}</span>` +
     `<span>${meta.label}</span>` +
-    (ev.source === 'voice' ? `<span>· 语音</span>` : '') +
+    (ev.source === 'voice' ? `<span>· voice</span>` : '') +
     `<span style="margin-left:auto">${fmtTime(ev.ts)}</span>`;
   div.appendChild(metaLine);
 
@@ -158,10 +158,10 @@ function setOdom(o) {
 function setListeningUI(enabled) {
   listeningEnabled = enabled;
   if (enabled) {
-    listenBtn.textContent = '🎙 监听中';
+    listenBtn.textContent = '🎙 Listening';
     listenBtn.classList.remove('paused');
   } else {
-    listenBtn.textContent = '🚫 已暂停';
+    listenBtn.textContent = '🚫 Paused';
     listenBtn.classList.add('paused');
   }
 }
@@ -183,7 +183,7 @@ async function pollEvents() {
     }
     connStatus.textContent = 'live';
   } catch (e) {
-    connStatus.textContent = '断线...';
+    connStatus.textContent = 'offline...';
   }
 }
 
@@ -212,7 +212,7 @@ input.addEventListener('keydown', (e) => {
 estopBtn.onclick = async () => { await fetch('/estop', {method: 'POST'}); };
 
 resetBtn.onclick = async () => {
-  if (!confirm('清空对话历史和事件日志？')) return;
+  if (!confirm('Clear all conversation history and event log?')) return;
   await fetch('/reset', {method: 'POST'});
   log.innerHTML = '';
   allEvents = [];
@@ -242,7 +242,7 @@ function downloadFile(filename, content, mime = 'application/json') {
 
 function eventsToMarkdown(payload) {
   const lines = [];
-  const exportedAt = new Date(payload.exported_at * 1000).toLocaleString('zh-CN');
+  const exportedAt = new Date(payload.exported_at * 1000).toLocaleString('en-US');
   lines.push(`# Robot Conversation Log`);
   lines.push(``);
   lines.push(`Exported: ${exportedAt}`);
@@ -275,7 +275,7 @@ exportBtn.onclick = async () => {
     downloadFile(`robot-log-${stamp}.json`, JSON.stringify(data, null, 2));
     downloadFile(`robot-log-${stamp}.md`, eventsToMarkdown(data), 'text/markdown');
   } catch (e) {
-    alert('导出失败: ' + e.message);
+    alert('Export failed: ' + e.message);
   }
 };
 
@@ -284,8 +284,8 @@ setInterval(pollEvents, 800);
 
 const welcome = document.createElement('div');
 welcome.className = 'ev system';
-welcome.innerHTML = '<div class="meta"><span class="icon">ℹ️</span><span>就绪</span></div>' +
-                    '<div class="body">在下面打字，或对着麦克风说 "Hey Jarvis"。\n点 ⬇ 导出所有记录；点 🎙 暂停语音监听。</div>';
+welcome.innerHTML = '<div class="meta"><span class="icon">ℹ️</span><span>Ready</span></div>' +
+                    '<div class="body">Type a command below, or say "Hey Jarvis" to the microphone.\nClick ⬇ to export logs; click 🎙 to pause voice listening.</div>';
 log.appendChild(welcome);
 </script>
 </body>
