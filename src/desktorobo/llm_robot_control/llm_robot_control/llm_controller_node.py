@@ -56,7 +56,10 @@ Rules:
 - Never combine linear >= 0.2 with angular >= 1.0 (skidding).
 - If user says "stop" or anything urgent, call stop() first.
 - Chain tool calls for multi-step instructions before replying.
-- Reply to the user in the language they used (often Chinese).
+- Reply in English (no Chinese characters).
+- For motion commands (drive/stop/wait), reply with JUST a short acknowledgement: "ok" or "done" or "stopping" — under 5 words, no narration.
+- For questions or status (get_status, "where are you", "what can you do"), give one short informative sentence.
+- The shorter the better — assume the user is impatient and watching the robot move.
 """
 
 
@@ -243,7 +246,7 @@ class LLMControllerNode(Node):
                     reply = msg.content or "(no reply)"
                     self._log_event("assistant", reply)
                     self._log_event("stats",
-                        f"耗时 {time.time()-turn_start:.1f}s  ·  累计 ${self._cost_usd:.4f}  ·  tokens {self._tokens_in}↑/{self._tokens_out}↓",
+                        f"Latency {time.time()-turn_start:.1f}s  ·  Total ${self._cost_usd:.4f}  ·  tokens {self._tokens_in}↑/{self._tokens_out}↓",
                         duration=round(time.time()-turn_start, 2),
                         cost_usd=round(self._cost_usd, 6),
                         tokens_in=self._tokens_in,
@@ -326,7 +329,7 @@ class LLMControllerNode(Node):
             with self._event_lock:
                 self.events.clear()
                 self._next_event_id = 0
-            self._log_event("system", "对话已重置")
+            self._log_event("system", "Conversation reset")
             return jsonify({"ok": True})
 
         @app.route("/event", methods=["POST"])
@@ -361,7 +364,7 @@ class LLMControllerNode(Node):
                 data = request.get_json(force=True) or {}
                 self._listening_enabled = bool(data.get("enabled", True))
                 self._log_event("system",
-                    f"语音监听: {'开启' if self._listening_enabled else '已暂停'}")
+                    f"Voice listening: {'enabled' if self._listening_enabled else 'paused'}")
             return jsonify({"enabled": self._listening_enabled})
 
         @app.route("/export", methods=["GET"])
